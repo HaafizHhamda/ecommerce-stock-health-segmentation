@@ -22,9 +22,9 @@ menjawab kebutuhan tersebut.
 | 2. Data Cleaning | Perbaikan tipe data `date_added`, penanganan missing value pada `rating_avg`, pembuatan flag `is_review` |
 | 3. Exploratory Data Analysis | Distribusi status review, analisis top-10 & top-1 produk berdasarkan `review_count`, root-cause analysis |
 | 4. Feature Engineering | Heatmap korelasi untuk seleksi fitur, pembuatan fitur turunan (`description_length`, `product_age_days`) |
-| 5. Outlier Handling | Deteksi outlier adaptif (IQR untuk data skewed, mean±3σ untuk data mendekati normal), capping |
-| 6. Scaling | `RobustScaler` (dipilih karena data mengandung outlier) |
-| 7. Clustering | K-Means dengan pemilihan k berbasis Silhouette Score |
+| 5. Outlier Handling | Deteksi outlier adaptif (IQR untuk data skewed, persentil ke-96 khusus `review_count` & `stock_quantity`, business rule `[0, 5]` untuk `rating_avg`), capping |
+| 6. Scaling | `StandardScaler` |
+| 7. Clustering | K-Means dengan pemilihan k dievaluasi lewat Elbow Method (Inertia), Silhouette Score, dan Silhouette Diagram per-k |
 | 8. Profiling Cluster | Interpretasi tiap cluster memakai fitur inti + fitur pendukung (`price`, `description_length`, `product_age_days`) |
 
 ## Temuan Utama
@@ -37,21 +37,26 @@ imputasi 0 + flag kolom baru `is_review`.
 **Fitur yang dipilih untuk clustering**: `rating_avg`, `review_count`, `stock_quantity`
 (dipilih berdasarkan korelasi terhadap pola pembelian; `price` dikeluarkan karena korelasinya lemah)
 
-**Jumlah cluster optimal**: k=3, dipilih dari Silhouette Score tertinggi (0.567) di antara k=2–6
+**Jumlah cluster optimal**: k=4, dipilih berdasarkan kombinasi tiga evaluasi — Elbow Method
+(penurunan inertia mulai melandai signifikan setelah k=4), Silhouette Score (k=4 masih kompetitif
+di 0.540, selisih tipis dari k=3 di 0.573), dan validasi profil bisnis (setiap cluster di k=4
+menunjukkan karakteristik yang berbeda dan actionable, termasuk munculnya segmen "produk
+bermasalah kualitasnya" yang tidak terlihat di k=3)
 
 ### Hasil Segmentasi
 
 | Cluster | Nama | Ukuran | Karakteristik |
 |---|---|---|---|
-| 0 | **High Engagement / Popular Products** | 79 item | Harga premium, stok terbatas, review & rating tinggi |
-| 1 | **High Stock / Bulk Inventory** | 76 item | Harga terjangkau, stok melimpah, review masih rendah-sedang |
-| 2 | **Standard / Low Review Products** | 297 item | Mayoritas katalog, stok terbatas, review paling rendah |
+| 0 | **Premium & High Rating** | 273 item | Harga termahal, rating tertinggi (4,58), stok sangat menipis |
+| 1 | **Low Rating / Underperforming** | 104 item | Rating terendah (2,57), review paling minim — kandidat evaluasi kualitas |
+| 2 | **High Demand / Most Popular** | 46 item | Review terbanyak (12,98), rating baik, stok sangat kritis |
+| 3 | **Bulk Stock / Mass Storage** | 29 item | Stok melimpah (309 unit), harga paling terjangkau, produk paling senior |
 
 ## Rekomendasi Bisnis
 
-- **Cluster 0**: prioritaskan restock darurat / cari supplier alternatif untuk mencegah stockout
-- **Cluster 1**: dorong penjualan lewat bundling atau promosi untuk mempercepat perputaran stok
-- **Cluster 2**: pantau lebih lanjut — kelompok terbesar dengan interaksi paling minim, berpotensi jadi target strategi peningkatan visibilitas produk
+- **Cluster 0 & Cluster 2**: prioritas restock — keduanya produk favorit pasar (margin tinggi / demand tinggi) dengan stok kritis (<5 unit)
+- **Cluster 1**: audit kualitas produk, deskripsi, atau vendor — rating rendah berisiko merusak citra toko
+- **Cluster 3**: kandidat kampanye diskon/bundling untuk mempercepat perputaran stok yang menumpuk
 
 ## Requirements
 
@@ -62,21 +67,22 @@ scipy
 matplotlib
 seaborn
 scikit-learn
-feature-engine
 ```
 
 ## Cara Menjalankan
 
 ```bash
-pip install pandas numpy scipy matplotlib seaborn scikit-learn feature-engine
-jupyter notebook Notebook__5_.ipynb
+pip install pandas numpy scipy matplotlib seaborn scikit-learn
+jupyter notebook Notebook.ipynb
 ```
 
 Pastikan `products.csv` berada di direktori yang sama dengan notebook.
 
-## Catatan & Batasan
+## Catatan & Rencana Pengembangan
 
-- Clustering saat ini hanya menggunakan 3 fitur inti; fitur seperti `price`, `description_length`,
-  dan `product_age_days` baru dipakai pada tahap profiling pasca-clustering, belum sebagai bagian
-  dari model itu sendiri
-- Belum ada langkah ekspor hasil akhir (dataframe berlabel cluster) ke file terpisah
+- Analisis saat ini hanya mencakup produk dengan `is_review == 1` (pernah direview). Segmentasi
+  untuk produk `is_review == 0` (belum pernah direview) direncanakan sebagai pengembangan lanjutan,
+  kemungkinan menggunakan pendekatan rule-based (bukan clustering) karena minimnya sinyal interaksi
+  pada kelompok ini
+- Kategori (`category`, `subcategory`, `brand`) belum dilibatkan sebagai fitur clustering, masih
+  berpotensi digunakan sebagai lapisan analisis/pelaporan tambahan di iterasi berikutnya
